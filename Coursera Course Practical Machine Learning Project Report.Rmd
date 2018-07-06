@@ -1,0 +1,188 @@
+---
+title: "Coursera Course Practical Machine Learning Project Report"
+author: "M. Liu"
+output:
+  html_document:
+    keep_md: yes
+    toc: yes
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+---
+
+```{r, results='hide', echo=FALSE, include=FALSE}
+
+setwd("D:/Coursera/8_Practical Machine Learning/Coursera-Practical-Machine-Learning-Project")
+
+#install.packages("caret")
+#install.packages("png")
+#install.packages("grid")
+library(caret)
+library(png)
+library(grid)
+```
+
+
+
+
+## Data ##
+The data for this project are from readings of wearable fitness trackers as descripted in the project instructiobns:
+
+>"Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)".
+
+### Data Preparation and Cleaning ###
+The raw data are in two files. Since we will predict classes in pml-testing.csv dataset, we call this "validation" dataset instead. 
+
+```{r}
+train_in <- read.csv('./pml-training.csv', header=T)
+validation <- read.csv('./pml-testing.csv', header=T)
+```
+
+#### Data Partitioning ####
+ We need to split the training data into training partition (70%) and testing partition (30%). We will use validation dataset (pml-testing.csv) for predicting classe.
+
+```{r}
+set.seed(254)
+training_sample <- createDataPartition(y=train_in$classe, p=0.7, list=FALSE)
+training <- train_in[training_sample, ]
+testing <- train_in[-training_sample, ]
+```
+
+#### Identification of Non-Zero Features in the Validation Dataset ####
+In order to predict classes in the validation dataset, we need to use features that are non-zero in the dataset. We typically stay away from examining the data to avoid model fitting being influenced. Since this is not a time series analysis, looking at the data for non-zero data columns does not seem to be a major concern.  
+
+```{r}
+all_zero_colnames <- sapply(names(validation), function(x) all(is.na(validation[,x])==TRUE))
+nznames <- names(all_zero_colnames)[all_zero_colnames==FALSE]
+nznames <- nznames[-(1:7)]
+nznames <- nznames[1:(length(nznames)-1)]
+```
+
+The non-zero features presented are:
+```{r, echo=FALSE}
+print(sort(nznames))
+```
+
+## Model Building ##
+
+We use three (3) differnt models and compare their out-of-sample accuracty. The three models are:
+
+1. Decision trees with CART (rpart)
+2. Stochastic gradient boosting trees (gbm)
+3. Random forest decision trees (rf)
+
+The code to run fit these models is:
+
+```{r, echo=FALSE}
+fitControl <- trainControl(method='cv', number = 3)
+```
+
+```{r, eval=FALSE}
+model_cart <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='rpart'
+)
+save(model_cart, file='./ModelFitCART.RData')
+model_gbm <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='gbm'
+)
+save(model_gbm, file='./ModelFitGBM.RData')
+model_rf <- train(
+  classe ~ ., 
+  data=training[, c('classe', nznames)],
+  trControl=fitControl,
+  method='rf',
+  ntree=100
+)
+save(model_rf, file='./ModelFitRF.RData')
+```
+
+### Cross Validation ###
+Cross validation is done for each model with K = 3. This is set in the above code chunk using the fitControl object as defined below:
+
+```{r, eval=FALSE}
+fitControl <- trainControl(method='cv', number = 3)
+```
+
+## Model Assessment (Out of sample error) ##
+
+```{r, echo=FALSE, results='hide'}
+load('./ModelFitCART.RData')
+load('./ModelFitGBM.RData')
+load('./ModelFitRF.RData')
+```
+
+```{r, message=FALSE}
+predCART <- predict(model_cart, newdata=testing)
+cmCART <- confusionMatrix(predCART, testing$classe)
+predGBM <- predict(model_gbm, newdata=testing)
+cmGBM <- confusionMatrix(predGBM, testing$classe)
+predRF <- predict(model_rf, newdata=testing)
+cmRF <- confusionMatrix(predRF, testing$classe)
+AccuracyResults <- data.frame(
+  Model = c('CART', 'GBM', 'RF'),
+  Accuracy = rbind(cmCART$overall[1], cmGBM$overall[1], cmRF$overall[1])
+)
+print(AccuracyResults)
+```
+
+Based on an assessment of the out-of-sample errors, both gradient boosting and random forests outperform CART model, with random forests being slightly more accurate. The confusion matrix for the random forest model is below.
+
+```{r, echo=FALSE}
+print(cmRF$table)
+```
+
+The next step in modeling could be to create an ensemble model of these three model results, however, given the high accuracy of the random forest model, this process does not seem to be necessary. We will accept the random forest model as the champion and move on to predicting classe in the validation dataset (pml-testing.csv).
+
+```{r, echo=FALSE}
+champion_model <- model_rf
+```
+
+```{r, echo=FALSE}
+imp <- varImp(champion_model)
+imp$importance$Overall <- sort(imp$importance$Overall, decreasing=TRUE)
+featureDF <- data.frame(
+  FeatureName=row.names(imp$importance),
+  Importance=imp$importance$Overall
+)
+```
+
+The champion model includes the following 5 features as the most important for predicting the exercise classe. A feature plot is included to show how these features are related to one another and how clusters of exercise classe begin to appear using these 5 features.
+```{r, echo=FALSE}
+print(featureDF[1:5,])
+```
+
+```{r, eval=FALSE, echo=FALSE}
+# this code is here to show how the figure was created. Not evaluated to save memory when building the html file.
+featurePlot(x=training[, featureDF$FeatureName[1:5]], y=training$classe, plot = 'pairs')
+```
+
+```{r fig.width=10, fig.height=10, echo=FALSE}
+img <- readPNG("./FeaturePlot.png")
+grid.raster(img)
+```
+
+## Prediction ##
+
+In the last step, we use the validation dataset ('pml-testing.csv') to predict a classe for each of the 20 observations based on the features contained in the dataset.
+
+```{r}
+predValidation <- predict(champion_model, newdata=validation)
+ValidationPredictionResults <- data.frame(
+  problem_id=validation$problem_id,
+  predicted=predValidation
+)
+print(ValidationPredictionResults)
+```
+
+## Conclusion ##
+
+Based on the data available, we fit a reasonably sound model with a high degree of accuracy in predicting out of sample observations. The random forest model is very accurate.
+
+One constaint that could be relaxed in future work would be to remove the section of data preparation where we limit features to those that are non-zero in the validation dataset. We don't know Why there are so many missing features in the validation dataset, but not missing in the training dataset? Therefore, we are forced to apply the constaint. At leat for now and for this exercise, it seems necessary to apply the constaint. It is obvious and to to everyone's understanding that the features have to be ovelapped in training data and validation data to ensure that the model built is relevant. 
