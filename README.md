@@ -13,4 +13,4 @@ Coursera_Course_Practical_Machine_Learning_Project_Report.md | Report in Markdow
 
 A copy of Coursera_Course_Practical_Machine_Learning_Project_Report.html to the gh-pages branch as index.html so that this can be viewed via github.
 
-[Final Report for Practical Machine Learning Course Project](https://mliu5408.github.io/Coursera-Practical-Machine-Learning-Project/)
+[Final Report for Practical Machine Learning Course Project](https://mliu5408.github.io/pml_report.html)
